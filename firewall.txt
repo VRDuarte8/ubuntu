@@ -1,0 +1,111 @@
+#!/bin/bash
+### BEGIN INIT INFO
+# Provides : firewall
+# Required - Start :
+# Required - Stop :
+# Default - Start : 2 3 4 5
+# Default - Stop : 0 1 6
+# Short - Description : firewall
+### END INIT INFO
+
+# Declarando variáveis
+ALL="0:65535"
+PA="1024:65535"
+EXTERNA="10.0.2.0/24"
+INTERNA="10.0.10.0/24"
+FWEX="10.0.2.2"
+FWSSH="192.168.56.101"
+FW="10.0.10.1"
+DNS="10.0.10.2"
+STORAGE="10.0.10.3"
+
+case $1 in
+stop)
+
+# politicas que aceitam qualquer tipo de conex ão
+iptables -P OUTPUT ACCEPT
+iptables -P INPUT ACCEPT
+iptables -P FORWARD ACCEPT
+
+# limpar as regras das tabelas nat e filter
+iptables -t nat -F
+iptables -t filter -F
+
+;;
+
+start )
+# politicas que bloqueiam qualquer tipo de conexão
+iptables -P OUTPUT ACCEPT
+iptables -P INPUT DROP
+iptables -P FORWARD DROP
+
+# habilita a passagem de pacotes da REDE local em direção ao mundo.
+# Essa regra torna esse servidor o gateway de internet da rede interna
+iptables -t nat -I POSTROUTING -o enp0s3 -s $INTERNA -j MASQUERADE
+
+# habilita a passagem de pings da REDE para o mundo.
+iptables -A INPUT -p udp --sport 53 -s 0/0 -d $FWEX -j ACCEPT
+iptables -A INPUT -p udp --sport 53 -s $FWEX -d 0/0 -j ACCEPT
+iptables -A FORWARD -p icmp -d $INTERNA -j ACCEPT
+iptables -A FORWARD -p icmp -s $INTERNA -j ACCEPT
+
+# habilita a resolução de nomes do mundo para a REDE.
+iptables -A FORWARD -p udp --sport 53 -s 0/0 -d $INTERNA --dport $PA -j ACCEPT
+iptables -A FORWARD -p udp --sport $PA -s $INTERNA -d 0/0 --dport 53 -j ACCEPT
+
+# habilita o DHCP server.
+iptables -A INPUT -p udp --sport 68 -s 0/0 -d $FWEX -j ACCEPT
+iptables -A FORWARD -p udp --sport 68 -s 0/0 -d $INTERNA --dport $PA -j ACCEPT
+iptables -A FORWARD -p udp --sport $PA -s $INTERNA -d 0/0 --dport 68 -j ACCEPT
+
+# habilita loopback
+iptables -A INPUT -p icmp -d 127.0.0.1 -j ACCEPT
+iptables -A FORWARD -p icmp -d 127.0.0.1 -j ACCEPT
+
+# habilita a passagem e o uso dos protocolos comuns para as maquinas internas.
+for serv_ext in 80 443 25 110 143 993 995 21 20; do
+	iptables -A FORWARD -p tcp --sport $serv_ext -s 0/0 -d $INTERNA --dport $PA -j ACCEPT
+	iptables -A FORWARD -p tcp --sport $PA -s $INTERNA -d 0/0 --dport $serv_ext -j ACCEPT
+done
+
+# habilita a entrada / passagem / saida do NTP para maquina Firewall e maquinas internas.
+iptables -A INPUT -p udp -s $INTERNA --sport 123 -d $FW --dport 123 -j ACCEPT
+iptables -A FORWARD -p udp --sport 123 -s $INTERNA -d $INTERNA --dport 123 -j ACCEPT
+iptables -A FORWARD -p udp --sport 123 -s $INTERNA -d $INTERNA --dport 123 -j ACCEPT
+
+# habilita o redirecionamento de portas do SSH da maquina Firewall para as maquinas internas.
+iptables -A INPUT -p tcp -s 0/0 --dport 22 -j ACCEPT
+# habilita o acesso remoto para os seridores internos
+# DNS
+iptables -A INPUT -p tcp --sport 2202 -s 10.0.10.2 -d 0/0 --dport $PA -j ACCEPT
+iptables -A FORWARD -p tcp --sport 2202 -s 10.0.10.2 -d 0/0 --dport $PA -j ACCEPT
+iptables -A FORWARD -p tcp --sport $PA -s 0/0 -d 10.0.10.2 --dport 2202 -j ACCEPT
+iptables -t nat -A PREROUTING -p tcp --sport $PA -s 0/0 -d $FWSSH --dport 2202 -j DNAT --to-destination 10.0.10.2
+# Storage
+iptables -A INPUT -p tcp --sport 2203 -s 10.0.10.3 -d 0/0 --dport $PA -j ACCEPT
+iptables -A FORWARD -p tcp --sport 2203 -s 10.0.10.3 -d 0/0 --dport $PA -j ACCEPT
+iptables -A FORWARD -p tcp --sport $PA -s 0/0 -d 10.0.10.3 --dport 2203 -j ACCEPT
+iptables -t nat -A PREROUTING -p tcp --sport $PA -s 0/0 -d $FWSSH --dport 2203 -j DNAT --to-destination 10.0.10.3
+
+
+# Definindo regras de INPUT para estabelecimento de conexão remota
+iptables -A INPUT -i lo -j ACCEPT
+iptables -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+# permite manter a conexao estabelecida
+iptables -A FORWARD -m state --state ESTABLISHED,RELATED -j ACCEPT
+
+;;
+
+restart)
+$0 stop
+sleep 1
+$0 start
+
+;;
+
+*)
+echo 'Por favor use: "stop | start | restart "'
+;;
+
+esac
+### Fim do script
