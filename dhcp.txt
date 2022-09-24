@@ -1,0 +1,31 @@
+#### Conteúdo do arqiuvo 
+
+ddns-update-style none;
+deny unknown-clients;
+log-facility local7;
+
+subnet 10.0.10.0 netmask 255.255.255.0 {
+ range 10.0.10.10 10.0.10.254;
+ authoritative;
+ option domain-name "galileu.br";
+ option domain-name-servers 10.0.10.2;
+ option routers 10.0.10.1;
+ default-lease-time 600;
+ max-lease-time 7200;
+ min-lease-time 120;
+}
+
+## Define um IP fixo para o servidor de DNS 
+## OBS: Lembre-se de mudar o MAC address
+host dnsserver {
+ hardware ethernet 00:00:00:00:00:00;
+ fixed-address 10.0.10.2;
+}
+
+## Define um IP fixo para o servidor de storage
+## OBS: Lembre-se de mudar o MAC address
+host storage {
+ hardware ethernet 00:00:00:00:00:11;
+ fixed-address 10.0.10.3;
+}
+### Fim do arquivo
